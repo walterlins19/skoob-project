@@ -21,6 +21,7 @@ if uploaded_file is not None:
     
     # Ler a planilha selecionada
     df = pd.read_excel(xls, sheet_name=selected_sheet)
+    st.dataframe(df)
         # Contar a quantidade de livros por país
     if 'País' in df.columns:  # Substitua 'país' pelo nome da coluna que contém os países
         country_counts = df['País'].value_counts().reset_index()
