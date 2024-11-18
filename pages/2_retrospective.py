@@ -16,9 +16,10 @@ if uploaded_file is not None:
     try:
         # Read the uploaded XLSM file using pandas (Excel can be .xlsm, .xlsx)
         df = pd.read_excel(uploaded_file, sheet_name='DB', engine='openpyxl')
+        df, df.columns = df[1:] , df.iloc[0]
         # Streamlit Layout
         st.title('Dashboard: Books Read in a Year')
-
+        print(df)
         # Show basic stats
         st.header('Basic Statistics')
         total_books = len(df)
