@@ -2,11 +2,116 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from PIL import Image
+from io import BytesIO
+import requests
 
 # Streamlit UI
 st.title('Análise de Dados de Livros')
 
 st.sidebar.header('Carregar Arquivo Excel')
+import http.client
+def add_book_covers(df, title_column='Título'):
+    """
+    Enhance an existing DataFrame by adding book cover images.
+    
+    Args:
+        df (pandas.DataFrame): Input DataFrame containing book titles
+        title_column (str): Name of the column containing book titles
+    
+    Returns:
+        pandas.DataFrame: DataFrame with an added 'Book Cover' column
+    """
+    # Create a copy of the DataFrame to avoid modifying the original
+    enhanced_df = df.copy()
+    
+    # List to store book cover images
+    book_covers = []
+    
+    # API connection setup
+    conn = http.client.HTTPSConnection("hapi-books.p.rapidapi.com")
+    
+    headers = {
+        'x-rapidapi-key': "567a545e60msh8fecd6a13c95adbp106bacjsn41754a801cde",
+        'x-rapidapi-host': "hapi-books.p.rapidapi.com"
+    }
+    
+    # Process each book title
+    for title in df[title_column]:
+        try:
+            # Prepare the search query (replace spaces with +)
+            formatted_query = title.replace(" ", "+")
+            
+            # Make API request
+            conn.request("GET", f"/search/{formatted_query}", headers=headers)
+            res = conn.getresponse()
+            data = res.read().decode("utf-8")
+            
+            # Parse the JSON response
+            import json
+            book_data = json.loads(data)
+            
+            # Try to get the first book's cover
+            if book_data and len(book_data) > 0:
+                cover_url = book_data[0].get('cover')
+                
+                # Download book cover
+                if cover_url:
+                    response = requests.get(cover_url)
+                    if response.status_code == 200:
+                        # Open image with Pillow
+                        img = Image.open(BytesIO(response.content))
+                        book_covers.append(img)
+                    else:
+                        # If download fails, append None
+                        book_covers.append(None)
+                else:
+                    book_covers.append(None)
+            else:
+                book_covers.append(None)
+        
+        except Exception as e:
+            print(f"Error fetching cover for {title}: {e}")
+            book_covers.append(None)
+    
+    # Add book covers to the DataFrame
+    enhanced_df['Book Cover'] = book_covers
+    
+    return enhanced_df
+
+def display_books_with_covers(enhanced_df):
+    """
+    Display books with their covers in a Streamlit app.
+    
+    Args:
+        enhanced_df (pandas.DataFrame): DataFrame with book covers
+    """
+    st.title("Books with Covers")
+    
+    # Ensure we have a Book Cover column
+    if 'Book Cover' not in enhanced_df.columns:
+        st.error("No book covers found. Please add covers first.")
+        return
+    
+    # Display books
+    for index, row in enhanced_df.iterrows():
+        col1, col2 = st.columns([1, 3])
+        
+        with col1:
+            # Display book cover
+            if row['Book Cover'] is not None:
+                st.image(row['Book Cover'], width=150)
+            else:
+                st.write("No cover available")
+        
+        with col2:
+            # Display book details
+            for column in enhanced_df.columns:
+                if column != 'Book Cover':
+                    st.write(f"{column}: {row[column]}")
+        
+        # Add a separator
+        st.markdown("---")
 
 # File uploader for the user to upload an XLSM file
 uploaded_file = st.sidebar.file_uploader("Escolha um arquivo XLSM", type=["xlsm"])
@@ -31,7 +136,7 @@ if uploaded_file is not None:
         missing_columns = [col for col in required_columns if col not in available_columns]
         if missing_columns:
             st.warning(f"Alerta: As seguintes colunas obrigatórias estão faltando: {', '.join(missing_columns)}")
-        
+        df = add_book_covers(df)
         # Sidebar to select a column to visualize
         column_options = available_columns
         selected_column = st.sidebar.selectbox("Selecione uma Coluna para o Gráfico", column_options)
@@ -142,6 +247,7 @@ if uploaded_file is not None:
             st.subheader("Média de Nota por Gênero")
             genre_avg_rating = df.groupby('Gênero')['Nota'].mean()
             st.bar_chart(genre_avg_rating)
+        display_books_with_covers(df)
 
     except Exception as e:
         st.error(f"Erro ao ler o arquivo: {str(e)}")
