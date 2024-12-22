@@ -14,7 +14,16 @@ import http.client
 
 
 from datetime import datetime
-
+def load_data():
+    """
+    Carrega os dados do session_state.
+    Retorna None se os dados não estiverem disponíveis.
+    """
+    if 'df_livros' in st.session_state:
+        return st.session_state['df_livros']
+    else:
+        st.error("Por favor, carregue os dados na página principal primeiro.")
+        return None
 
 def criar_linha_tempo_leitura(df):
     """
@@ -25,7 +34,7 @@ def criar_linha_tempo_leitura(df):
         Colunas esperadas:
         - 'Título': Título do livro
         - 'Conclusão': Data de conclusão da leitura
-        - 'Nota': Nota dada ao livro (incrementos de 0.5)
+        - 'Nota': Nota dada ao livro
     """
     # Verificar colunas necessárias
     colunas_necessarias = ['Título', 'Conclusão', 'Nota']
@@ -45,7 +54,7 @@ def criar_linha_tempo_leitura(df):
     st.header("📚 Linha do Tempo de Leitura")
 
     # Opções de visualização
-    col1, col2 = st.columns([2, 1])
+    col1, col2 = st.columns([3, 1])
     
     with col1:
         # Filtro de ano
@@ -66,12 +75,128 @@ def criar_linha_tempo_leitura(df):
     else:
         df_filtrado = df_ordenado
 
-    # Configuração de cores para as métricas e notas
-    st.subheader("Personalização das Cores")
+    fig = go.Figure()
     
-    # Opção para mostrar/esconder seleção de cores
-    mostrar_cores = st.checkbox("Mostrar seleção de cores", value=True)
+    # Criar frames para animação
+    frames = []
     
+    for frame_idx in range(len(df_filtrado)):
+        frame_data = []
+        
+        # Dados até o frame atual
+        current_data = df_filtrado.iloc[:frame_idx + 1]
+        
+        # Adicionar linha conectando os pontos
+        if len(current_data) > 1:
+            frame_data.append(
+                go.Scatter(
+                    x=current_data['Conclusão'],
+                    y=list(range(1, len(current_data) + 1)),
+                    mode='lines',
+                    line=dict(color='rgba(100, 100, 100, 0.5)', width=2),
+                    hoverinfo='skip'
+                )
+            )
+        
+        # Adicionar pontos até o frame atual
+        for idx, (_, linha) in enumerate(current_data.iterrows(), 1):
+            frame_data.append(
+                go.Scatter(
+                    x=[linha['Conclusão']],
+                    y=[idx],
+                    mode='markers+text',
+                    marker=dict(
+                        size=15,
+                        color=linha['Nota'],
+                        colorscale='Viridis',
+                        colorbar=dict(title="Nota"),
+                        showscale=True,
+                        cmin=df_filtrado['Nota'].min(),
+                        cmax=df_filtrado['Nota'].max()
+                    ),
+                    text=[f"{linha['Título']} Nota: {linha['Nota']:.1f}"],
+                    textposition="top center",
+                    hoverinfo='text'
+                )
+            )
+        
+        frames.append(go.Frame(data=frame_data, name=f"frame{frame_idx}"))
+    
+    # Adicionar o primeiro ponto como estado inicial
+    first_row = df_filtrado.iloc[0]
+    fig.add_trace(
+        go.Scatter(
+            x=[first_row['Conclusão']],
+            y=[1],
+            mode='markers+text',
+            marker=dict(
+                size=15,
+                color=first_row['Nota'],
+                colorscale='Viridis',
+                colorbar=dict(title="Nota"),
+                showscale=True,
+                cmin=df_filtrado['Nota'].min(),
+                cmax=df_filtrado['Nota'].max()
+            ),
+            text=[f"{first_row['Título']} Nota: {first_row['Nota']:.1f}"],
+            textposition="top center",
+            hoverinfo='text'
+        )
+    )
+    
+    # Adicionar frames à figura
+    fig.frames = frames
+    
+    # Calcular o range do eixo x para melhor visualização
+    date_range = df_filtrado['Conclusão'].max() - df_filtrado['Conclusão'].min()
+    x_min = df_filtrado['Conclusão'].min() - (date_range * 0.1)
+    x_max = df_filtrado['Conclusão'].max() + (date_range * 0.1)
+    
+    # Adicionar controles de animação
+    fig.update_layout(
+        title="Linha do Tempo de Leitura",
+        height=600,
+        width=800,
+        xaxis=dict(
+            title="Data de Conclusão",
+            range=[x_min, x_max],
+            type='date'
+        ),
+        yaxis=dict(
+            title="Livros",
+            tickmode='linear',
+            tick0=1,
+            dtick=1,
+            showticklabels=False
+        ),
+        margin=dict(l=50, r=50, t=100, b=50),  # Aumentado margem superior
+        updatemenus=[
+            dict(
+                type="buttons",
+                showactive=False,
+                buttons=[
+                    dict(label="Play",
+                         method="animate",
+                         args=[None, {"frame": {"duration": 300, "redraw": True},
+                                    "fromcurrent": True,
+                                    "transition": {"duration": 200}}]),
+                    dict(label="Pause",
+                         method="animate",
+                         args=[[None], {"frame": {"duration": 0, "redraw": False},
+                                      "mode": "immediate",
+                                      "transition": {"duration": 0}}])
+                ],
+                x=0.1,
+                y=1.2  # Movido para fora do gráfico
+            )
+        ]
+    )
+    
+
+    st.plotly_chart(fig)
+
+    # Configuração de cores para as métricas
+    st.subheader("Personalização das Estatísticas")
     cores_disponiveis = {
         'Azul': '#0000FF',
         'Verde': '#00FF00',
@@ -80,102 +205,17 @@ def criar_linha_tempo_leitura(df):
         'Laranja': '#FFA500',
         'Rosa': '#FF69B4',
         'Amarelo': '#FFD700',
-        'Ciano': '#00FFFF',
-        'Verde Escuro': '#006400',
-        'Azul Escuro': '#00008B'
+        'Ciano': '#00FFFF'
     }
     
-    if mostrar_cores:
-        # Seleção de cores para cada métrica
-        col1_color, col2_color, col3_color = st.columns(3)
-        with col1_color:
-            cor_total = st.selectbox('Cor Total de Livros', list(cores_disponiveis.keys()))
-        with col2_color:
-            cor_media = st.selectbox('Cor Nota Média', list(cores_disponiveis.keys()))
-        with col3_color:
-            cor_melhor = st.selectbox('Cor Melhor Livro', list(cores_disponiveis.keys()))
-            
-        # Seleção de cores para cada nota
-        st.subheader("Cores por Nota")
-        notas_possiveis = np.arange(0, 5.5, 0.5)  # Notas de 0 a 5 com incremento de 0.5
-        
-        # Criar colunas dinâmicas para as notas
-        num_colunas = 3
-        cores_notas = {}
-        
-        for i in range(0, len(notas_possiveis), num_colunas):
-            cols = st.columns(num_colunas)
-            for j in range(num_colunas):
-                if i + j < len(notas_possiveis):
-                    nota = notas_possiveis[i + j]
-                    with cols[j]:
-                        # Usar session_state para manter as cores selecionadas
-                        if f'cor_nota_{nota}' not in st.session_state:
-                            st.session_state[f'cor_nota_{nota}'] = list(cores_disponiveis.keys())[0]
-                        cores_notas[nota] = st.selectbox(
-                            f'Nota {nota}',
-                            list(cores_disponiveis.keys()),
-                            key=f'cor_nota_{nota}'
-                        )
-    else:
-        # Usar últimas cores selecionadas ou cores padrão
-        if 'cor_total' not in st.session_state:
-            st.session_state.cor_total = 'Azul'
-        if 'cor_media' not in st.session_state:
-            st.session_state.cor_media = 'Verde'
-        if 'cor_melhor' not in st.session_state:
-            st.session_state.cor_melhor = 'Vermelho'
-        
-        cor_total = st.session_state.cor_total
-        cor_media = st.session_state.cor_media
-        cor_melhor = st.session_state.cor_melhor
-        
-        # Recuperar cores das notas do session_state
-        cores_notas = {}
-        for nota in np.arange(0, 5.5, 0.5):
-            cores_notas[nota] = st.session_state.get(f'cor_nota_{nota}', 'Azul')
-
-    # Criar figura Plotly
-    fig = go.Figure()
-
-    # Adicionar pontos na linha do tempo agrupados por nota
-    for nota in cores_notas.keys():
-        mask = df_filtrado['Nota'] == nota
-        df_nota = df_filtrado[mask]
-        
-        if not df_nota.empty:
-            fig.add_trace(go.Scatter(
-                x=df_nota['Conclusão'],
-                y=[nota] * len(df_nota),
-                mode='markers+text',
-                marker=dict(
-                    size=15,
-                    color=cores_disponiveis[cores_notas[nota]],
-                ),
-                text=df_nota['Título'],
-                textposition="top center",
-                hoverinfo='text',
-                name=f'Nota {nota}'
-            ))
-
-    # Configurações do layout
-    fig.update_layout(
-        title="Linha do Tempo de Leitura",
-        height=600,
-        xaxis_title="Data de Conclusão",
-        yaxis=dict(
-            title="Nota",
-            tickmode='array',
-            ticktext=[str(nota) for nota in sorted(cores_notas.keys())],
-            tickvals=sorted(cores_notas.keys()),
-            range=[-0.5, 5.5]
-        ),
-        margin=dict(l=50, r=50, t=50, b=50),
-        showlegend=False
-    )
-
-    # Exibir gráfico no Streamlit
-    st.plotly_chart(fig, use_container_width=True)
+    # Seleção de cores para cada métrica
+    col1_color, col2_color, col3_color = st.columns(3)
+    with col1_color:
+        cor_total = st.selectbox('Cor Total de Livros', list(cores_disponiveis.keys()))
+    with col2_color:
+        cor_media = st.selectbox('Cor Nota Média', list(cores_disponiveis.keys()))
+    with col3_color:
+        cor_melhor = st.selectbox('Cor Melhor Livro', list(cores_disponiveis.keys()))
 
     # Estatísticas com cores personalizadas
     st.subheader("Estatísticas de Leitura")
@@ -411,211 +451,8 @@ def organizar_e_filtrar_livros(df):
     
     return df_ano_atual
 
-def criar_graficos_personalizados(df):
-    """
-    Cria uma interface interativa para geração de gráficos personalizados usando PyGWalker.
-    
-    Args:
-        df (pandas.DataFrame): DataFrame com os dados dos livros
-    """
-    import pygwalker as pyg
-    
-    st.header("📊 Criação de Gráficos Personalizados")
-    
-    # Informações de uso
-    with st.expander("ℹ️ Como usar o criador de gráficos"):
-        st.markdown("""
-        ### Instruções de Uso:
-        
-        1. **Análises Temporais:**
-           - Use 'Conclusão' ou 'Ano de Publicação' para análises ao longo do tempo
-           - Combine com 'Nota' ou 'Páginas' para ver tendências
-        
-        2. **Análises Demográficas:**
-           - Explore distribuições por 'País', 'Região', 'Sexo Autor' e 'Etnia'
-           - Compare notas médias por diferentes grupos
-        
-        3. **Análises Literárias:**
-           - Compare 'Gênero' com outras métricas
-           - Analise diferenças entre 'Ficção' e não ficção
-           - Explore tendências por 'Séc' de publicação
-        
-        4. **Dicas de Uso:**
-           - Arraste campos para 'Encodings' para criar visualizações
-           - Use 'Mark' para escolher o tipo de gráfico
-           - Experimente diferentes combinações de campos
-        """)
-    
-    # Preparar dados
-    df_prep = preparar_dados_para_graficos(df)
-    
-    try:
-        # Configurar tema do PyGWalker
-        config = {
-            "theme": "streamlit",
-            "dark_mode": True,
-            "layout": {
-                "width": "100%",
-                "height": "800px"
-            }
-        }
-        
-        # Criar interface do PyGWalker
-        pyg_html = pyg.to_html(df_prep, spec="gramian", theme=config)
-        
-        # Exibir a interface do PyGWalker
-        st.components.v1.html(pyg_html, height=800)
-        
-        # Adicionar sugestões de análises
-        with st.expander("💡 Sugestões de Análises"):
-            st.markdown("""
-            ### Análises Recomendadas:
-            
-            1. **Padrões de Leitura**
-               - Livros lidos por mês/ano
-               - Páginas lidas ao longo do tempo
-               - Notas médias por período
-            
-            2. **Diversidade Literária**
-               - Distribuição por gênero e ficção/não-ficção
-               - Representatividade por sexo do autor e etnia
-               - Distribuição geográfica (país/região)
-            
-            3. **Tendências Históricas**
-               - Comparação entre ano de publicação e data de leitura
-               - Análise por século de publicação
-               - Evolução das notas por período histórico
-            
-            4. **Análises Editoriais**
-               - Distribuição por editora
-               - Relação entre editora e número de páginas
-               - Notas médias por editora
-            """)
-        
-        # Mostrar campos disponíveis
-        with st.expander("📋 Campos Disponíveis para Análise"):
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.markdown("### Dados Temporais")
-                st.markdown("""
-                - Conclusão
-                - Ano de Publicação
-                - Séc
-                - Mês
-                - Ano
-                - Trimestre
-                """)
-                
-                st.markdown("### Métricas")
-                st.markdown("""
-                - Páginas
-                - Nota
-                - Média Móvel de Páginas
-                - Média Móvel de Notas
-                """)
-            
-            with col2:
-                st.markdown("### Categorias Literárias")
-                st.markdown("""
-                - Gênero
-                - Ficção
-                - Editora
-                - Título
-                """)
-                
-                st.markdown("### Dados Geográficos")
-                st.markdown("""
-                - País
-                - Região
-                """)
-            
-            with col3:
-                st.markdown("### Dados Demográficos")
-                st.markdown("""
-                - Autor
-                - Sexo Autor
-                - Etnia
-                """)
-                
-                st.markdown("### Campos Calculados")
-                st.markdown("""
-                - Livros por Período
-                - Páginas por Período
-                - Notas Médias
-                """)
-        
-    except Exception as e:
-        st.error(f"""
-        Erro ao carregar o PyGWalker: {str(e)}
-        
-        Certifique-se de que o PyGWalker está instalado:
-        ```bash
-        pip install pygwalker
-        ```
-        """)
-        
-        # Mostrar DataFrame como fallback
-        st.write("Mostrando dados em formato tabular como alternativa:")
-        st.dataframe(df_prep)
-
-def preparar_dados_para_graficos(df):
-    """
-    Prepara os dados para uso no criador de gráficos.
-    
-    Args:
-        df (pandas.DataFrame): DataFrame original
-        
-    Returns:
-        pandas.DataFrame: DataFrame preparado para visualização
-    """
-
-    df_prep = df.copy()
 
 
-    
-    # Tratamento de datas
-    df_prep['Conclusão'] = pd.to_datetime(df_prep['Conclusão'])
-    df_prep['Ano'] = df_prep['Conclusão'].dt.year
-    df_prep['Mês'] = df_prep['Conclusão'].dt.month
-    df_prep['Mês_Nome'] = df_prep['Conclusão'].dt.strftime('%B')
-    df_prep['Trimestre'] = df_prep['Conclusão'].dt.quarter
-    
-    # Converter Ano de Publicação para numérico
-    df_prep['Ano de Publicação'] = pd.to_numeric(df_prep['Ano de Publicação'], errors='coerce')
-    
-    # Calcular métricas agregadas
-    df_prep['Livros_por_Mês'] = df_prep.groupby(['Ano', 'Mês'])['Título'].transform('count')
-    df_prep['Páginas_por_Mês'] = df_prep.groupby(['Ano', 'Mês'])['Páginas'].transform('sum')
-    df_prep['Nota_Média_por_Gênero'] = df_prep.groupby('Gênero')['Nota'].transform('mean')
-    df_prep['Nota_Média_por_Autor'] = df_prep.groupby('Autor')['Nota'].transform('mean')
-    
-    # Médias móveis
-    df_prep['Média_Móvel_Páginas'] = df_prep.groupby('Ano')['Páginas'].transform(
-        lambda x: x.rolling(window=3, min_periods=1).mean()
-    )
-    df_prep['Média_Móvel_Notas'] = df_prep.groupby('Ano')['Nota'].transform(
-        lambda x: x.rolling(window=3, min_periods=1).mean()
-    )
-    
-    # Criar categorias úteis
-    df_prep['Tamanho'] = pd.cut(
-        df_prep['Páginas'],
-        bins=[0, 100, 300, 500, float('inf')],
-        labels=['Curto', 'Médio', 'Longo', 'Muito Longo']
-    )
-    
-    df_prep['Faixa_Nota'] = pd.cut(
-        df_prep['Nota'],
-        bins=[0, 2, 3, 4, 5],
-        labels=['Ruim', 'Regular', 'Bom', 'Excelente']
-    )
-    
-    # Remover a coluna ID que não é necessária para visualização
-    if 'ID' in df_prep.columns:
-        df_prep = df_prep.drop('ID', axis=1)
-    
-    return df_prep
 
 def app_retrospectiva_leitura(df):
     """
@@ -673,8 +510,7 @@ def app_retrospectiva_leitura(df):
     # Filtrar livros
     df_filtrado = filtrar_livros_por_anos(df_preparado, anos_selecionados)
 
-    if st.sidebar.checkbox("Mostrar Criador de Gráficos"):
-        criar_graficos_personalizados(df)
+
     
     if df_filtrado.empty:
         st.warning("Nenhum livro encontrado no período selecionado.")
@@ -843,16 +679,13 @@ def display_books_with_covers(enhanced_df):
 st.sidebar.header('Carregar Arquivo Excel')
 
 # File uploader for the user to upload an XLSM file
-uploaded_file = st.sidebar.file_uploader("Escolha um arquivo XLSM", type=["xlsm"])
+df = load_data()
 
-if uploaded_file is not None:
+if df is not None:
     try:
-        # Read the uploaded XLSM file using pandas (Excel can be .xlsm, .xlsx)
-        df = pd.read_excel(uploaded_file, sheet_name='DB', engine='openpyxl')
-        #df, df.columns = df[1:] , df.iloc[0]
+
         # Streamlit Layout
         st.title('Dashboard: Livros')
-        print(df)
         df = df.drop(columns=['ID'])
 
         # Show basic stats
