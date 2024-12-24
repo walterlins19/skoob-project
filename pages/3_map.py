@@ -5,7 +5,7 @@ import pycountry
 import unidecode
 import difflib
 import pycountry_convert as pc
-
+from datetime import datetime
 import numpy as np
 
 
@@ -23,6 +23,129 @@ def load_data():
         st.error("Por favor, carregue os dados na página principal primeiro.")
         return None
 # Inicializa o tradutor do googletrans
+
+def filtrar_livros_por_anos(df, anos_selecionados):
+    """
+    Filtra livros para os anos selecionados.
+    
+    Args:
+        df (pandas.DataFrame): DataFrame preparado
+        anos_selecionados (List[int]): Anos selecionados para análise
+    
+    Returns:
+        pandas.DataFrame: DataFrame filtrado
+    """
+    return df[df['Conclusão'].dt.year.isin(anos_selecionados)]
+
+def preparar_dados_para_analise(df):
+    """
+    Prepara o DataFrame para análise, garantindo tipos de dados corretos.
+    
+    Args:
+        df (pandas.DataFrame): DataFrame original
+    
+    Returns:
+        pandas.DataFrame: DataFrame preparado
+    """
+    # Converte colunas para os tipos corretos
+    df['Conclusão'] = pd.to_datetime(df['Conclusão'], errors='coerce')
+    df['Ano de Publicação'] = pd.to_numeric(df['Ano de Publicação'], errors='coerce')
+    df['Páginas'] = pd.to_numeric(df['Páginas'], errors='coerce')
+    df['Nota'] = pd.to_numeric(df['Nota'], errors='coerce')
+    
+    # Remove linhas com datas inválidas
+    df_limpo = df.dropna(subset=['Conclusão'])
+    
+    return df_limpo
+
+def organizar_e_filtrar_livros(df):
+
+    """
+    Organiza os livros do mais recente ao mais antigo e filtra os livros lidos no ano atual.
+    
+    Args:
+        df (pandas.DataFrame): DataFrame com informações dos livros
+    
+    Returns:
+        pandas.DataFrame: DataFrame filtrado e ordenado
+    """
+    # Verifica se a coluna 'Conclusão' existe
+    if 'Conclusão' not in df.columns:
+        raise ValueError("A coluna 'Conclusão' não existe no DataFrame.")
+    
+    # Converte a coluna 'Conclusão' para datetime
+    df['Conclusão'] = pd.to_datetime(df['Conclusão'], errors='coerce')
+    
+    # Remove linhas com datas inválidas
+    df_limpo = df.dropna(subset=['Conclusão'])
+    
+    # Ordena do mais recente ao mais antigo
+    df_ordenado = df_limpo.sort_values('Conclusão', ascending=False)
+    
+    # Obtém o ano atual
+    ano_atual = datetime.now().year
+    
+    # Filtra livros lidos no ano atual
+    df_ano_atual = df_ordenado[df_ordenado['Conclusão'].dt.year == ano_atual]
+    
+    return df_ano_atual
+
+def app_retrospectiva_leitura(df):
+    """
+    Aplicativo Streamlit para retrospectiva de leitura.
+    
+    Args:
+        df (pandas.DataFrame): DataFrame original de livros
+    """
+    # Preparar dados
+    df_preparado = preparar_dados_para_analise(df)
+    
+    # Título do aplicativo
+    st.sidebar.title("🔍 Filtros de Retrospectiva")
+    
+    # Obter anos únicos de conclusão
+    anos_disponiveis = sorted(df_preparado['Conclusão'].dt.year.unique())
+    ano_min, ano_max = min(anos_disponiveis), max(anos_disponiveis)
+    
+    # Seleção de intervalo de anos com slider
+    st.sidebar.subheader("Período de Análise")
+    col1, col2 = st.sidebar.columns(2)
+    
+    with col1:
+        ano_inicio = st.slider(
+            "Ano Inicial",
+            min_value=ano_min,
+            max_value=ano_max,
+            value=ano_min,
+            step=1,
+            key="ano_inicio"
+        )
+    
+    with col2:
+        ano_fim = st.slider(
+            "Ano Final",
+            min_value=ano_min,
+            max_value=ano_max,
+            value=ano_max,
+            step=1,
+            key="ano_fim"
+        )
+    
+    # Verificar se o intervalo é válido
+    if ano_inicio > ano_fim:
+        st.sidebar.error("O ano inicial não pode ser maior que o ano final!")
+        return
+    
+    # Gerar lista de anos selecionados
+    anos_selecionados = list(range(ano_inicio, ano_fim + 1))
+    
+    # Mostrar anos selecionados
+    anos_texto = f"📅 Período selecionado: {ano_inicio} - {ano_fim}"
+    st.sidebar.markdown(f"<div style='text-align: center; padding: 10px; background-color: #000000; border-radius: 5px;'>{anos_texto}</div>", unsafe_allow_html=True)
+    
+    # Filtrar livros
+    df_filtrado = filtrar_livros_por_anos(df_preparado, anos_selecionados)
+    return df_filtrado
 
 def get_continent(iso_code):
     """Retorna o continente baseado no código ISO do país"""
@@ -369,6 +492,7 @@ def main():
     
     # Carregar dados
     df = load_data()
+    df = app_retrospectiva_leitura(df)
     df_paises = preparar_dados_mapa_livros(df)
     if df_paises is not None:
         # Botão para gerar visualização
