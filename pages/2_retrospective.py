@@ -8,8 +8,9 @@ import requests
 import time
 from typing import List
 import numpy as np
-
-
+import math
+# Paleta de cores para os gráficos
+cores_graficos = px.colors.qualitative.Pastel
 import http.client
 
 
@@ -24,13 +25,200 @@ def load_data():
     else:
         st.error("Por favor, carregue os dados na página principal primeiro.")
         return None
+    
+
+def criar_estrelas(df, coluna_notas):
+    """
+    Cria uma nova coluna com emojis de estrelas baseada nas notas
+    
+    Parameters:
+    df (pandas.DataFrame): DataFrame com as notas
+    coluna_notas (str): Nome da coluna que contém as notas
+    
+    Returns:
+    pandas.DataFrame: DataFrame com a nova coluna de estrelas
+    """
+    def converter_nota_para_estrelas(nota):
+        # Arredonda para 0.5 mais próximo
+        nota_arredondada = round(nota * 2) / 2
+        
+        # Separa a parte inteira e decimal
+        estrelas_cheias = math.floor(nota_arredondada)
+        tem_meia = (nota_arredondada % 1) == 0.5
+        
+        # Cria a string de estrelas
+        estrelas = '⭐' * estrelas_cheias
+        if tem_meia:
+            estrelas += '✨'
+            
+        return estrelas
+    
+    # Cria a nova coluna aplicando a função
+    df_copy = df.copy()
+    df_copy['estrelas'] = df_copy[coluna_notas].apply(converter_nota_para_estrelas)
+    
+    return df_copy
+
+def assign_frames(df, date_column):
+    """
+    Creates a 'frames' column in a DataFrame assigning frame numbers based on date order.
+    
+    Parameters:
+    df (pandas.DataFrame): Input DataFrame
+    date_column (str): Name of the date column to use for ordering
+    
+    Returns:
+    pandas.DataFrame: DataFrame with new 'frames' column
+    """
+    # Make a copy to avoid modifying the original DataFrame
+    df_copy = df.copy()
+    
+    # Sort the DataFrame by date
+    df_copy = df_copy.sort_values(by=date_column)
+    
+    # Create frames column starting from 1 to length of DataFrame
+    df_copy['frames'] = range(1, len(df_copy) + 1)
+    
+    # Return the DataFrame sorted back to its original order
+    return df_copy.sort_index()
+
+def criar_timeline_animada_combinada(df):
+    """
+    Cria uma timeline animada de livros usando Plotly (scatter + line plot) e exibe no Streamlit.
+
+    Args:
+        df (pd.DataFrame): DataFrame contendo os dados dos livros, com as colunas:
+            'Título', 'Conclusão' (datetime), 'Nota', e outras colunas para personalização.
+    """
+
+    # Converter 'Conclusão' para datetime se ainda não for
+    df = criar_estrelas(df,'Nota')
+    df['Conclusão'] = pd.to_datetime(df['Conclusão'])
+    df['Conclusão'] = pd.to_datetime(df['Conclusão']
+                            .astype(str)
+                            .str[:10],
+                            format="%Y-%m-%d") # Control ChatGPT date format output
+    df = df.sort_values('Conclusão', ignore_index=True)
+
+    # Ordenar o DataFrame pela data de conclusão
+    df_indexed = assign_frames(df,'Conclusão')
+    # df_indexed = pd.DataFrame()
+    # for index in np.arange(start=0,
+    #                    stop=len(df)+1,
+    #                    step=1):
+    #     df_slicing = df.iloc[:index].copy()
+    #     df_slicing['frames'] = (index//1)
+    #     df_indexed = pd.concat([df_indexed, df_slicing])
+
+
+
+    print(df_indexed)
+
+    # Scatter Plot
+    scatter_plot = px.scatter(
+        df_indexed,
+        x='Conclusão',
+        y='Nota',
+        color='Título',
+        animation_frame='frames'
+        #text=df['estrelas']
+        #color_discrete_sequence=RETAIL_GROUP_COLORS
+    )
+    scatter_plot.update_traces(mode="markers+lines", hovertemplate=None)
+    scatter_plot.update_layout(hovermode="x")
+
+
+    for frame in scatter_plot.frames:
+        for data in frame.data:
+            data.update(mode='markers',
+                        showlegend=True,
+                        opacity=1)
+            data['x'] = np.take(data['x'], [-1])
+            data['y'] = np.take(data['y'], [-1])
+
+    # Line Plot
+    line_plot = px.line(
+        df_indexed,
+        x='Conclusão',
+        y='Nota',
+        color='Título',
+        animation_frame='frames',
+        #color_discrete_sequence=RETAIL_GROUP_COLORS,
+        width=1000,
+        height=500,
+        line_shape='spline'  # make a line graph curvy
+    )
+    line_plot.update_traces(showlegend=False)  # legend will be from line graph
+    for frame in line_plot.frames:
+        for data in frame.data:
+            data.update(mode='lines', opacity=0.8, showlegend=False)
+
+    # Stationary combined plot
+    combined_plot = go.Figure(
+        data=line_plot.data + scatter_plot.data,
+        frames=[
+            go.Frame(data=line_plot.data + scatter_plot.data, name=scatter_plot.name)
+            for line_plot, scatter_plot in zip(line_plot.frames, scatter_plot.frames)
+        ],
+        layout=line_plot.layout
+    )
+
+    combined_plot.update_yaxes(
+        gridcolor='#03060d',
+        griddash='dot',
+        gridwidth=.5,
+        linewidth=2,
+        tickwidth=2
+    )
+
+    combined_plot.update_xaxes(
+        title_font=dict(size=16),
+        linewidth=2,
+        tickwidth=2
+    )
+
+    combined_plot.update_traces(
+        line=dict(width=5),
+        marker=dict(size=25))
+
+    combined_plot.update_layout(
+        font=dict(size=18),
+        yaxis=dict(tickfont=dict(size=16)),
+        xaxis=dict(tickfont=dict(size=16)),
+        showlegend=True,
+        legend=dict(
+            title='Livro'),
+        template='simple_white',
+        title="<b>Progressão de Notas de Leitura</b>",
+        yaxis_title="<b>Nota</b>",
+        xaxis_title="<b>Data</b>",
+        yaxis_showgrid=True,
+        xaxis_range=[df_indexed['Conclusão'].min() - pd.DateOffset(days=5),
+                    df_indexed['Conclusão'].max() + pd.DateOffset(days=5)],
+        yaxis_range=[df_indexed['Nota'].min() * 0.75,
+                    df_indexed['Nota'].max() * 1.25],
+        plot_bgcolor='#9c1e2a',
+        paper_bgcolor='#1f08a1',
+        title_x=0.5
+    )
+
+    # adjust speed of animation
+    #combined_plot['layout'].pop("sliders")
+    combined_plot.layout.updatemenus[0].buttons[0]['args'][1]['frame']['duration'] = 300
+    combined_plot.layout.updatemenus[0].buttons[0]['args'][1]['transition']['duration'] = 150
+    combined_plot.layout.updatemenus[0].buttons[0]['args'][1]['transition']['redraw'] = False
+
+
+    # Ajustar as configurações do gráfico para melhor apresentação no Streamlit
+    st.plotly_chart(combined_plot)
 
 def criar_linha_tempo_leitura(df):
     """
-    Cria uma linha do tempo interativa de leitura usando Streamlit e Plotly
-    
+    Cria uma linha do tempo interativa de leitura com animação, usando Streamlit e Plotly,
+    começando no livro mais antigo e progredindo até o mais recente.
+
     Parâmetros:
-    df (pandas.DataFrame): DataFrame com informações de leitura
+    df (pandas.DataFrame): DataFrame com informações de leitura.
         Colunas esperadas:
         - 'Título': Título do livro
         - 'Conclusão': Data de conclusão da leitura
@@ -47,7 +235,7 @@ def criar_linha_tempo_leitura(df):
     if not pd.api.types.is_datetime64_any_dtype(df['Conclusão']):
         df['Conclusão'] = pd.to_datetime(df['Conclusão'])
 
-    # Ordenar por data de conclusão
+    # Ordenar por data de conclusão (do mais antigo para o mais novo)
     df_ordenado = df.sort_values('Conclusão')
 
     # Título da seção
@@ -55,16 +243,16 @@ def criar_linha_tempo_leitura(df):
 
     # Opções de visualização
     col1, col2 = st.columns([3, 1])
-    
+
     with col1:
         # Filtro de ano
         anos_unicos = sorted(df_ordenado['Conclusão'].dt.year.unique())
         ano_selecionado = st.selectbox(
-            "Selecione o Ano", 
-            anos_unicos, 
+            "Selecione o Ano",
+            anos_unicos,
             index=len(anos_unicos) - 1  # Seleciona o ano mais recente por padrão
         )
-    
+
     with col2:
         # Opção de mostrar todos os anos
         mostrar_todos = st.checkbox("Mostrar Todos os Anos", value=False)
@@ -74,18 +262,18 @@ def criar_linha_tempo_leitura(df):
         df_filtrado = df_ordenado[df_ordenado['Conclusão'].dt.year == ano_selecionado]
     else:
         df_filtrado = df_ordenado
-
+        
     fig = go.Figure()
-    
+
     # Criar frames para animação
     frames = []
     
     for frame_idx in range(len(df_filtrado)):
         frame_data = []
-        
+
         # Dados até o frame atual
         current_data = df_filtrado.iloc[:frame_idx + 1]
-        
+
         # Adicionar linha conectando os pontos
         if len(current_data) > 1:
             frame_data.append(
@@ -97,7 +285,7 @@ def criar_linha_tempo_leitura(df):
                     hoverinfo='skip'
                 )
             )
-        
+
         # Adicionar pontos até o frame atual
         for idx, (_, linha) in enumerate(current_data.iterrows(), 1):
             frame_data.append(
@@ -119,13 +307,13 @@ def criar_linha_tempo_leitura(df):
                     hoverinfo='text'
                 )
             )
-        
+
         frames.append(go.Frame(data=frame_data, name=f"frame{frame_idx}"))
-    
-    # Adicionar o primeiro ponto como estado inicial
+
+    # Configuração inicial do gráfico com o primeiro ponto
     first_row = df_filtrado.iloc[0]
     fig.add_trace(
-        go.Scatter(
+         go.Scatter(
             x=[first_row['Conclusão']],
             y=[1],
             mode='markers+text',
@@ -143,10 +331,10 @@ def criar_linha_tempo_leitura(df):
             hoverinfo='text'
         )
     )
-    
+
     # Adicionar frames à figura
     fig.frames = frames
-    
+        
     # Calcular o range do eixo x para melhor visualização
     date_range = df_filtrado['Conclusão'].max() - df_filtrado['Conclusão'].min()
     x_min = df_filtrado['Conclusão'].min() - (date_range * 0.1)
@@ -191,7 +379,6 @@ def criar_linha_tempo_leitura(df):
             )
         ]
     )
-    
 
     st.plotly_chart(fig)
 
@@ -280,128 +467,460 @@ def filtrar_livros_por_anos(df, anos_selecionados):
     """
     return df[df['Conclusão'].dt.year.isin(anos_selecionados)]
 
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+
+
+
 def criar_visualizacoes_livros(df):
     """
-    Cria múltiplas visualizações de dados de livros usando Plotly.
-    
+    Cria múltiplas visualizações de dados de livros usando Plotly e Streamlit.
+
     Args:
         df (pandas.DataFrame): DataFrame com informações dos livros
     """
+     # Estilo CSS para as tabs
+    st.markdown(
+        """
+        <style>
+        div[data-baseweb="tab"] > div {
+        
+            border-radius: 6px 6px 0px 0px;
+            background-color: #3498db;
+            color: white;
+            padding: 8px;
+            margin-bottom: -1px;
+          }
+        
+        div[data-baseweb="tab"]:first-child > div {
+           background-color: #e74c3c; /* Vermelho para a primeira tab*/
+         }
+        
+        div[data-baseweb="tab"]:nth-child(2) > div {
+            background-color: #2ecc71; /* Verde para a segunda tab */
+        }
+        div[data-baseweb="tab"]:nth-child(3) > div {
+            background-color: #f39c12; /* Laranja para a terceira tab */
+        }
+        div[data-baseweb="tab"]:nth-child(4) > div {
+            background-color: #9b59b6; /* Roxo para a quarta tab */
+        }
+        div[data-baseweb="tab"]:nth-child(5) > div {
+            background-color: #34495e; /* Azul escuro para a quinta tab */
+        }
+
+        
+        div[data-baseweb="tab"].selected div {
+            background-color: white !important;
+            color: black !important;
+           }
+        
+        
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     # Título da página
     st.title("📊 Análise Detalhada de Leitura")
-    
+
     # Divide a página em colunas
-    tab1, tab2, tab3, tab4,tab5 = st.tabs([
-        "Distribuição de Notas e Páginas", 
-        "Análise de Gêneros", 
-        "Perfil dos Autores", 
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Estatísticas Gerais",
+        "Análise de Gêneros",
+        "Perfil dos Autores",
         "Tendências de Leitura",
-        "Linha do tempo"
+        "Geográfico",
     ])
-    
+
     with tab1:
-        st.header("Distribuição de Notas e Páginas")
+        st.header("Estatísticas Gerais dos Livros")
+
+        st.subheader("Resumo dos Livros")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("📚 Livros Lidos", df.shape[0])
+        with col2:
+            st.metric("📖 Páginas Totais", df['Páginas'].sum())
+        with col3:
+            st.metric("📏 Média de Páginas", f"{df['Páginas'].mean():.0f}")
+
+        col4, col5, col6 = st.columns(3)
+        with col4:
+            st.metric("💯 Nota média", f"{df['Nota'].mean():.1f}")
+        with col5:
+            st.metric("🌎 Países", df['País'].nunique())
+        with col6:
+            st.metric("✍️ Autores", df['Autor'].nunique())
+        st.subheader("Livros em Destaque")
+        col_maior, col_menor = st.columns(2)
+        with col_maior:
+            maior_livro = df.loc[df['Páginas'].idxmax()]
+            st.markdown(f"**Livro Mais Longo:**")
+            st.markdown(
+                f"""
+                <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 1.2em;">📚</span>
+                    <span style="margin-left: 5px;"><strong>{maior_livro['Título']}</strong></span>
+                </div>
+                <div><span style="font-size: 1em;">📖</span> <span style="margin-left: 5px;"><em>Páginas: {maior_livro['Páginas']}</em></span></div>
+                """, unsafe_allow_html=True
+            )
+            
+        with col_menor:
+            menor_livro = df.loc[df['Páginas'].idxmin()]
+            st.markdown(f"**Livro Mais Curto:**")
+            st.markdown(
+                    f"""
+                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 1.2em;">📖</span>
+                    <span style="margin-left: 5px;"><strong>{menor_livro['Título']}</strong></span>
+                    </div>
+                <div><span style="font-size: 1em;">📄</span> <span style="margin-left: 5px;"><em>Páginas: {menor_livro['Páginas']}</em></span></div>
+                """, unsafe_allow_html=True
+            )
         
-        # Scatter plot de Notas vs Páginas
-        fig_notas_paginas = px.scatter(
-            df, 
-            x='Páginas', 
-            y='Nota', 
-            color='Gênero',
-            hover_data=['Título', 'Autor'],
-            title='Relação entre Número de Páginas e Nota',
-            labels={'Páginas': 'Número de Páginas', 'Nota': 'Nota do Livro'}
-        )
-        fig_notas_paginas.update_layout(height=600)
-        st.plotly_chart(fig_notas_paginas, use_container_width=True)
-        
-        # Box plot de notas por gênero
-        fig_notas_genero = px.box(
-            df, 
-            x='Gênero', 
-            y='Nota',
-            title='Distribuição de Notas por Gênero',
-            labels={'Gênero': 'Gênero Literário', 'Nota': 'Nota do Livro'}
-        )
-        fig_notas_genero.update_layout(height=600)
-        st.plotly_chart(fig_notas_genero, use_container_width=True)
-    
-    with tab2:
-        st.header("Análise de Gêneros Literários")
-        
-        # Gráfico de contagem de livros por gênero
+        # --- Mais Antigo vs Mais Novo ---
+        col_antigo, col_novo= st.columns(2)
+        with col_antigo:
+            mais_antigo = df.loc[df['Ano de Publicação'].idxmin()]
+            st.markdown(f"**Livro Mais Antigo:**")
+            st.markdown(
+                    f"""
+                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 1.2em;">🕰️</span>
+                    <span style="margin-left: 5px;"><strong>{mais_antigo['Título']}</strong></span>
+                    </div>
+                <div><span style="font-size: 1em;">🗓️</span> <span style="margin-left: 5px;"><em>Ano: {mais_antigo['Ano de Publicação']}</em></span></div>
+                """, unsafe_allow_html=True
+            )
+        with col_novo:
+            mais_novo = df.loc[df['Ano de Publicação'].idxmax()]
+            st.markdown(f"**Livro Mais Recente:**")
+            st.markdown(
+                    f"""
+                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 1.2em;">🆕</span>
+                        <span style="margin-left: 5px;"><strong>{mais_novo['Título']}</strong></span>
+                    </div>
+                    <div><span style="font-size: 1em;">🗓️</span> <span style="margin-left: 5px;"><em>Ano: {mais_novo['Ano de Publicação']}</em></span></div>
+                """, unsafe_allow_html=True
+            )
+        st.subheader("Diversidade de Leituras")
+        col_metric1, col_metric2= st.columns(2)
+# --- Métricas Ficção vs Não Ficção ---
+        with col_metric1:
+            total_books = len(df)
+            
+            # Calculate counts and percentages for Fiction
+            ficcao_count = df['Ficção'].value_counts().get('Sim', 0)
+            ficcao_percentage = (ficcao_count / total_books * 100) if total_books > 0 else 0
+            
+            # Calculate counts and percentages for Non-Fiction
+            nao_ficcao_count = df['Autor/Temática LGBTQIA+?'].value_counts().get('Sim', 0)
+            nao_ficcao_percentage = (nao_ficcao_count / total_books * 100) if total_books > 0 else 0
+            
+            # Display metrics with percentages as deltas
+            st.metric(
+                label="📚 Ficção", 
+                value=ficcao_count,
+                delta=f"{ficcao_percentage:.1f}% do total"
+            )
+            
+            st.metric(
+                label="🌈 LGBT", 
+                value=nao_ficcao_count,
+                delta=f"{nao_ficcao_percentage:.1f}% do total"
+            )
+
+        # --- Métricas Negro vs Branco ---
+        with col_metric2:
+            if 'Etnia' in df.columns:
+                # Calculate counts and percentages for Black authors
+                negro_count = df['Etnia'].value_counts().get('Negra', 0)
+                total_books = len(df)
+                negro_percentage = (negro_count / total_books * 100) if total_books > 0 else 0
+                
+                # Calculate counts and percentages for Women authors
+                mulheres_count = df['Sexo Autor'].value_counts().get('F', 0)  # Assuming 'F' for Female
+                mulheres_percentage = (mulheres_count / total_books * 100) if total_books > 0 else 0
+                
+                # Display metrics with percentages as deltas
+                st.metric(
+                    label="🔳 Autores Negros", 
+                    value=negro_count,
+                    delta=f"{negro_percentage:.1f}% do total"
+                )
+                
+                st.metric(
+                    label="👩 Autores Mulheres", 
+                    value=mulheres_count,
+                    delta=f"{mulheres_percentage:.1f}% do total"
+                )
+
+        # --- Distribuição em Gêneros ---
+        st.subheader("Distribuição de Gêneros")
         genero_counts = df['Gênero'].value_counts()
         fig_generos = px.pie(
             values=genero_counts.values, 
             names=genero_counts.index,
-            title='Distribuição de Livros por Gênero',
-            hole=0.3
+             title=f'📚 Distribuição de Livros por Gênero 📚',
+            color_discrete_sequence=cores_graficos,
         )
-        st.plotly_chart(fig_generos, use_container_width=True)
+        fig_generos.update_traces(textinfo='percent+label', textfont_size=12)
+        st.plotly_chart(fig_generos, use_container_width=True, key="tab1_generos_pie")
+
+         # --- Distribuição das Notas ---
+        st.subheader("Distribuição das Notas")
+        fig_notas = px.histogram(
+            df,
+            x='Nota',
+            title=f'📊 Distribuição das Notas Atribuídas 💯',
+            labels={'Nota': 'Nota do Livro'},
+            color_discrete_sequence=cores_graficos,
+        )
+        st.plotly_chart(fig_notas, use_container_width=True, key="tab1_notas_hist")
         
+        # --- Maior vs Menor Livro ---
+        
+    with tab2:
+        st.header("Análise de Gêneros Literários")
+
+        # Gráfico de contagem de livros por gênero
+        col_etnia, col_genero = st.columns(2)
+        with col_genero:
+            genero_counts = df['Gênero'].value_counts()
+            fig_generos = px.pie(
+                values=genero_counts.values,
+                names=genero_counts.index,
+                title=f'📚 Distribuição de Livros por Gênero 📚',
+                color_discrete_sequence=cores_graficos,
+            )
+            fig_generos.update_traces(textinfo='percent+label', textfont_size=12)
+            st.plotly_chart(fig_generos, use_container_width=True, key="tab2_generos_pie")
+
         # Gráfico de médias de notas por gênero
-        notas_por_genero = df.groupby('Gênero')['Nota'].mean().sort_values(ascending=False)
-        fig_notas_genero = px.bar(
-            x=notas_por_genero.index, 
-            y=notas_por_genero.values,
-            title='Média de Notas por Gênero',
-            labels={'x': 'Gênero', 'y': 'Média da Nota'}
-        )
-        st.plotly_chart(fig_notas_genero, use_container_width=True)
-    
+        with col_etnia:
+            notas_por_genero = df.groupby('Gênero')['Nota'].mean().sort_values(ascending=False)
+            fig_notas_genero = px.bar(
+                x=notas_por_genero.index,
+                y=notas_por_genero.values,
+                title=f'⭐ Média de Notas por Gênero 🌟',
+                labels={'x': 'Gênero', 'y': 'Média da Nota'},
+                color_discrete_sequence=cores_graficos,
+            )
+            st.plotly_chart(fig_notas_genero, use_container_width=True, key="tab2_notas_genero_bar")
+
     with tab3:
         st.header("Perfil dos Autores")
         
-        # Distribuição de autores por sexo
+         # Distribuição de autores por sexo
         sexo_autor_counts = df['Sexo Autor'].value_counts()
         fig_sexo_autor = px.pie(
             values=sexo_autor_counts.values, 
             names=sexo_autor_counts.index,
-            title='Distribuição de Livros por Sexo do Autor',
-            hole=0.3
+            title=f'🚻 Distribuição de Livros por Sexo do Autor 🚻',
+            color_discrete_sequence=cores_graficos,
         )
-        st.plotly_chart(fig_sexo_autor, use_container_width=True)
+        fig_sexo_autor.update_traces(textinfo='percent+label', textfont_size=12)
+        st.plotly_chart(fig_sexo_autor, use_container_width=True, key="tab3_sexo_autor_pie")
         
         # Gráfico de etnia dos autores
         etnia_counts = df['Etnia'].value_counts()
         fig_etnia = px.bar(
             x=etnia_counts.index, 
             y=etnia_counts.values,
-            title='Número de Livros por Etnia do Autor',
-            labels={'x': 'Etnia', 'y': 'Número de Livros'}
+             title=f'🌍 Número de Livros por Etnia do Autor 🌍',
+            labels={'x': 'Etnia', 'y': 'Número de Livros'},
+            color_discrete_sequence=cores_graficos,
         )
-        st.plotly_chart(fig_etnia, use_container_width=True)
-    
+        st.plotly_chart(fig_etnia, use_container_width=True, key="tab3_etnia_bar")
+
+
     with tab4:
         st.header("Tendências de Leitura")
-        
+
         # Preparar dados de conclusão
         df['Conclusão'] = pd.to_datetime(df['Conclusão'])
         df['Mês Conclusão'] = df['Conclusão'].dt.to_period('M')
-        
+
         # Gráfico de livros lidos por mês
         livros_por_mes = df.groupby('Mês Conclusão').size()
         fig_livros_mes = px.line(
-            x=livros_por_mes.index.astype(str), 
+            x=livros_por_mes.index.astype(str),
             y=livros_por_mes.values,
-            title='Número de Livros Lidos por Mês',
-            labels={'x': 'Mês', 'y': 'Número de Livros'}
+             title=f'📅 Número de Livros Lidos por Mês 📚',
+            labels={'x': 'Mês', 'y': 'Número de Livros'},
+            color_discrete_sequence=cores_graficos,
         )
-        st.plotly_chart(fig_livros_mes, use_container_width=True)
-        
+        st.plotly_chart(fig_livros_mes, use_container_width=True, key="tab4_livros_mes_line")
+
         # Gráfico de páginas lidas por mês
         paginas_por_mes = df.groupby('Mês Conclusão')['Páginas'].sum()
         fig_paginas_mes = px.bar(
-            x=paginas_por_mes.index.astype(str), 
+            x=paginas_por_mes.index.astype(str),
             y=paginas_por_mes.values,
-            title='Total de Páginas Lidas por Mês',
-            labels={'x': 'Mês', 'y': 'Número de Páginas'}
+            title=f'📖 Total de Páginas Lidas por Mês 🗓️',
+            labels={'x': 'Mês', 'y': 'Número de Páginas'},
+             color_discrete_sequence=cores_graficos,
         )
-        st.plotly_chart(fig_paginas_mes, use_container_width=True)
+        st.plotly_chart(fig_paginas_mes, use_container_width=True, key="tab4_paginas_mes_bar")
+    
     with tab5:
-        st.header("Linha do tempo")
+        st.header("Análise Geográfica")
+        
+        # Estatísticas Geográficas
+        st.subheader("Estatísticas Geográficas")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Número de Países", df['País'].nunique())
+        with col2:
+           mais_lido = df['País'].value_counts().idxmax() if not df['País'].value_counts().empty else 'N/A'
+           st.metric("País Mais Lido", mais_lido)
+        with col3:
+            st.metric("Número de Continentes", df['Região'].nunique())
+        
+        # Continente Mais Lido
+        st.subheader("Continente Mais Lido")
+        continente_mais_lido = df['Região'].value_counts().idxmax() if not df['Região'].value_counts().empty else 'N/A'
+        st.markdown(f"**O continente mais lido é:** {continente_mais_lido}")
+        
+        # Distribuição por Regiões
+        st.subheader("Distribuição de Livros por Região")
+        regiao_counts = df['Região'].value_counts()
+        fig_regioes = px.pie(
+            values=regiao_counts.values,
+            names=regiao_counts.index,
+            title=f'🗺️ Distribuição de Livros por Região 🌍',
+            color_discrete_sequence=cores_graficos,
+        )
+        fig_regioes.update_traces(textinfo='percent+label', textfont_size=12)
+        st.plotly_chart(fig_regioes, use_container_width=True, key="tab5_regioes_pie")
+    
+    
+        
 
-        criar_linha_tempo_leitura(df)
+
+
+    with tab2:
+        st.header("Análise de Gêneros Literários")
+
+        # Gráfico de contagem de livros por gênero
+        col_etnia, col_genero = st.columns(2)
+        with col_genero:
+            genero_counts = df['Gênero'].value_counts()
+            fig_generos = px.pie(
+                values=genero_counts.values,
+                names=genero_counts.index,
+                title=f'📚 Distribuição de Livros por Gênero 📚',
+                color_discrete_sequence=cores_graficos,
+            )
+            fig_generos.update_traces(textinfo='percent+label', textfont_size=12)
+            st.plotly_chart(fig_generos, use_container_width=True, key="tab2_generos_pie")
+
+        # Gráfico de médias de notas por gênero
+        with col_etnia:
+            notas_por_genero = df.groupby('Gênero')['Nota'].mean().sort_values(ascending=False)
+            fig_notas_genero = px.bar(
+                x=notas_por_genero.index,
+                y=notas_por_genero.values,
+                title=f'⭐ Média de Notas por Gênero 🌟',
+                labels={'x': 'Gênero', 'y': 'Média da Nota'},
+                color_discrete_sequence=cores_graficos,
+            )
+            st.plotly_chart(fig_notas_genero, use_container_width=True, key="tab2_notas_genero_bar")
+
+    with tab3:
+        st.header("Perfil dos Autores")
+        
+         # Distribuição de autores por sexo
+        sexo_autor_counts = df['Sexo Autor'].value_counts()
+        fig_sexo_autor = px.pie(
+            values=sexo_autor_counts.values, 
+            names=sexo_autor_counts.index,
+            title=f'🚻 Distribuição de Livros por Sexo do Autor 🚻',
+            color_discrete_sequence=cores_graficos,
+        )
+        fig_sexo_autor.update_traces(textinfo='percent+label', textfont_size=12)
+        st.plotly_chart(fig_sexo_autor, use_container_width=True, key="tab3_sexo_autor_pie")
+        
+        # Gráfico de etnia dos autores
+        etnia_counts = df['Etnia'].value_counts()
+        fig_etnia = px.bar(
+            x=etnia_counts.index, 
+            y=etnia_counts.values,
+             title=f'🌍 Número de Livros por Etnia do Autor 🌍',
+            labels={'x': 'Etnia', 'y': 'Número de Livros'},
+            color_discrete_sequence=cores_graficos,
+        )
+        st.plotly_chart(fig_etnia, use_container_width=True, key="tab3_etnia_bar")
+
+
+    with tab4:
+        st.header("Tendências de Leitura")
+
+        # Preparar dados de conclusão
+        df['Conclusão'] = pd.to_datetime(df['Conclusão'])
+        df['Mês Conclusão'] = df['Conclusão'].dt.to_period('M')
+
+        # Gráfico de livros lidos por mês
+        livros_por_mes = df.groupby('Mês Conclusão').size()
+        fig_livros_mes = px.line(
+            x=livros_por_mes.index.astype(str),
+            y=livros_por_mes.values,
+             title=f'📅 Número de Livros Lidos por Mês 📚',
+            labels={'x': 'Mês', 'y': 'Número de Livros'},
+            color_discrete_sequence=cores_graficos,
+        )
+        st.plotly_chart(fig_livros_mes, use_container_width=True, key="tab4_livros_mes_line")
+
+        # Gráfico de páginas lidas por mês
+        paginas_por_mes = df.groupby('Mês Conclusão')['Páginas'].sum()
+        fig_paginas_mes = px.bar(
+            x=paginas_por_mes.index.astype(str),
+            y=paginas_por_mes.values,
+            title=f'📖 Total de Páginas Lidas por Mês 🗓️',
+            labels={'x': 'Mês', 'y': 'Número de Páginas'},
+             color_discrete_sequence=cores_graficos,
+        )
+        st.plotly_chart(fig_paginas_mes, use_container_width=True, key="tab4_paginas_mes_bar")
+    
+    with tab5:
+        st.header("Análise Geográfica")
+        
+        # Estatísticas Geográficas
+        st.subheader("Estatísticas Geográficas")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Número de Países", df['País'].nunique())
+        with col2:
+           mais_lido = df['País'].value_counts().idxmax() if not df['País'].value_counts().empty else 'N/A'
+           st.metric("País Mais Lido", mais_lido)
+        with col3:
+            st.metric("Número de Continentes", df['Região'].nunique())
+        
+        # Continente Mais Lido
+        st.subheader("Continente Mais Lido")
+        continente_mais_lido = df['Região'].value_counts().idxmax() if not df['Região'].value_counts().empty else 'N/A'
+        st.markdown(f"**O continente mais lido é:** {continente_mais_lido}")
+        
+        # Distribuição por Regiões
+        st.subheader("Distribuição de Livros por Região")
+        regiao_counts = df['Região'].value_counts()
+        fig_regioes = px.pie(
+            values=regiao_counts.values,
+            names=regiao_counts.index,
+            title=f'🗺️ Distribuição de Livros por Região 🌍',
+            color_discrete_sequence=cores_graficos,
+        )
+        fig_regioes.update_traces(textinfo='percent+label', textfont_size=12)
+        st.plotly_chart(fig_regioes, use_container_width=True, key="tab5_regioes_pie")
+
+    
+
+
 
 def verificar_colunas(df, required_columns):
     """
@@ -452,6 +971,135 @@ def organizar_e_filtrar_livros(df):
     return df_ano_atual
 
 
+def criar_metricas_livros(df):
+    """
+    Cria métricas e visualizações para um DataFrame de livros no Streamlit
+    
+    Parameters:
+    df (pandas.DataFrame): DataFrame com as informações dos livros
+    """
+    # Converter colunas para tipos apropriados
+    df['Ano de Publicação'] = pd.to_numeric(df['Ano de Publicação'], errors='coerce')
+    df['Páginas'] = pd.to_numeric(df['Páginas'], errors='coerce')
+    df['Nota'] = pd.to_numeric(df['Nota'], errors='coerce')
+    
+    # Layout de métricas em colunas
+    col1, col2, col3, col4 = st.columns(4)
+    
+    # Métricas básicas
+    with col1:
+        st.metric("Total de Livros", len(df))
+        
+    with col2:
+        media_paginas = df['Páginas'].mean()
+        st.metric("Média de Páginas", f"{media_paginas:.0f}")
+        
+    with col3:
+        media_nota = df['Nota'].mean()
+        st.metric("Média das Notas", f"{media_nota:.1f}")
+        
+    with col4:
+        total_paginas = df['Páginas'].sum()
+        st.metric("Total de Páginas Lidas", f"{total_paginas:,.0f}")
+    
+    # Segunda linha de métricas com cards expandidos
+    st.markdown("## Métricas de Livros")
+    st.markdown("### Mais novo e mais velho")
+    col5, col6= st.columns(2)
+
+    with col5:
+        livro_mais_velho = df.loc[df['Ano de Publicação'].idxmin()]
+        with st.container():
+            st.metric("Livro Mais Antigo", f"{livro_mais_velho['Ano de Publicação']:.0f}")
+            st.markdown(f"**Título:** {livro_mais_velho['Título']}")
+            st.markdown(f"**Autor:** {livro_mais_velho['Autor']}")
+        
+    with col6:
+        livro_mais_novo = df.loc[df['Ano de Publicação'].idxmax()]
+        with st.container():
+            st.metric("Livro Mais Recente", f"{livro_mais_novo['Ano de Publicação']:.0f}")
+            st.markdown(f"**Título:** {livro_mais_novo['Título']}")
+            st.markdown(f"**Autor:** {livro_mais_novo['Autor']}")
+        
+    st.markdown("### Maior e Menor")
+    col7, col8= st.columns(2)
+
+    with col7:
+        maior_livro = df.loc[df['Páginas'].idxmax()]
+        with st.container():
+            st.metric("Maior Livro", f"{maior_livro['Páginas']:.0f} págs")
+            st.markdown(f"**Título:** {maior_livro['Título']}")
+            st.markdown(f"**Autor:** {maior_livro['Autor']}")
+
+        
+    with col8:
+        menor_livro = df.loc[df['Páginas'].idxmin()]
+        with st.container():
+            st.metric("Menor Livro", f"{menor_livro['Páginas']:.0f} págs")
+            st.markdown(f"**Título:** {menor_livro['Título']}")
+            st.markdown(f"**Autor:** {menor_livro['Autor']}")
+    
+    # Distribuição das Notas
+    st.markdown("### Distribuição das Notas")
+    fig_notas = px.histogram(df, x='Nota', nbins=10, 
+                            title="Distribuição das Notas",
+                            color_discrete_sequence=['#1f77b4'])
+    st.plotly_chart(fig_notas, use_container_width=True)
+    
+    # Análises por categoria
+    col9, col10 = st.columns(2)
+    
+    with col9:
+        st.subheader("Top 5 Gêneros")
+        generos = df['Gênero'].value_counts().head()
+        fig_generos = px.bar(x=generos.index, y=generos.values,
+                            title="Top 5 Gêneros",
+                            color_discrete_sequence=['#2ecc71'])
+        st.plotly_chart(fig_generos, use_container_width=True)
+        
+    with col10:
+        st.subheader("Top 5 Países")
+        paises = df['País'].value_counts().head()
+        fig_paises = px.bar(x=paises.index, y=paises.values,
+                           title="Top 5 Países",
+                           color_discrete_sequence=['#e74c3c'])
+        st.plotly_chart(fig_paises, use_container_width=True)
+    
+    # Análises adicionais com pie charts
+    col11, col12 = st.columns(2)
+    
+    with col11:
+        st.subheader("Distribuição por Sexo do Autor")
+        sexo_autor = df['Sexo Autor'].value_counts()
+        fig_sexo = px.pie(values=sexo_autor.values, 
+                         names=sexo_autor.index,
+                         title="Distribuição por Sexo do Autor")
+        st.plotly_chart(fig_sexo, use_container_width=True)
+        
+    with col12:
+        st.subheader("Ficção vs Não-Ficção")
+        ficcao = df['Ficção'].value_counts()
+        fig_ficcao = px.pie(values=ficcao.values, 
+                           names=ficcao.index,
+                           title="Ficção vs Não-Ficção")
+        st.plotly_chart(fig_ficcao, use_container_width=True)
+    
+    # Métricas de diversidade
+    st.subheader("Distribuição por Etnia")
+    etnia_count = df['Etnia'].value_counts()
+    fig_etnia = px.bar(x=etnia_count.index, y=etnia_count.values,
+                       title="Distribuição por Etnia",
+                       color_discrete_sequence=['#9b59b6'])
+    st.plotly_chart(fig_etnia, use_container_width=True)
+    
+    # Média de notas por década
+    st.subheader("Média de Notas por Década")
+    df['Década'] = (df['Ano de Publicação'] // 10) * 10
+    notas_decada = df.groupby('Década')['Nota'].mean().round(2)
+    fig_decada = px.line(x=notas_decada.index, y=notas_decada.values,
+                        title="Média de Notas por Década",
+                        labels={'x': 'Década', 'y': 'Nota Média'})
+    st.plotly_chart(fig_decada, use_container_width=True)
 
 
 def app_retrospectiva_leitura(df):
@@ -506,9 +1154,9 @@ def app_retrospectiva_leitura(df):
     # Mostrar anos selecionados
     anos_texto = f"📅 Período selecionado: {ano_inicio} - {ano_fim}"
     st.sidebar.markdown(f"<div style='text-align: center; padding: 10px; background-color: #000000; border-radius: 5px;'>{anos_texto}</div>", unsafe_allow_html=True)
-    
     # Filtrar livros
     df_filtrado = filtrar_livros_por_anos(df_preparado, anos_selecionados)
+    print(df_filtrado['Ano de Publicação'])
 
 
     
@@ -521,9 +1169,10 @@ def app_retrospectiva_leitura(df):
         'Total de Livros': len(df_filtrado),
         'Total de Páginas': df_filtrado['Páginas'].sum() if 'Páginas' in df_filtrado.columns else 0,
         'Média de Páginas por Livro': int(round(df_filtrado['Páginas'].mean(), 0)) if 'Páginas' in df_filtrado.columns else 0,
-        'Número de Autores Únicos': df_filtrado['Autor'].nunique() if 'Autor' in df_filtrado.columns else 0
+        'Nota média': df_filtrado['Nota'].mean() if 'Nota' in df_filtrado.columns else 0
     }
-    criar_cards_metricas(metricas)
+    #criar_cards_metricas(metricas)
+    #criar_metricas_livros(df_filtrado)
     
     # Criar visualizações
     criar_visualizacoes_livros(df_filtrado)
@@ -544,14 +1193,14 @@ def criar_cards_metricas(metricas):
         'Total de Livros': '📚',
         'Total de Páginas': '🌐',
         'Média de Páginas por Livro': '📖',
-        'Número de Autores Únicos': '👥'
+        'Nota média': '👥'
     }
     
     cores_metricas = {
         'Total de Livros': 'background-color: #3498db; color: white;',
         'Total de Páginas': 'background-color: #2ecc71; color: white;',
         'Média de Páginas por Livro': 'background-color: #e74c3c; color: white;',
-        'Número de Autores Únicos': 'background-color: #f39c12; color: white;'
+        'Nota média': 'background-color: #f39c12; color: white;'
     }
     
     # Criação dos cards

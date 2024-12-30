@@ -157,10 +157,16 @@ def get_continent(iso_code):
         return "Desconhecido"
     
 def create_stats_cards(df_paises):
-    """Cria cards com estatísticas gerais"""
+    """Cria cards com estatísticas gerais, incluindo livros por continente"""
     
     # Adiciona coluna de continente
     df_paises['Continente'] = df_paises['Codigo_ISO'].apply(get_continent)
+    
+    # Agrupar por continente
+    df_continentes = df_paises.groupby('Continente').agg(
+        total_livros=('Quantidade_Livros', 'sum'),
+        media_livros=('Quantidade_Livros', 'mean')
+    ).reset_index()
     
     # Layout de 3 colunas para os cards
     col1, col2, col3 = st.columns(3)
@@ -169,16 +175,18 @@ def create_stats_cards(df_paises):
         st.metric(
             label="Total de Países",
             value=len(df_paises),
-            delta=f"{len(df_paises['Continente'].unique())} Continentes"
+            label_visibility='visible'
+            #delta=f"{len(df_paises['Continente'].unique())} Continentes"
         )
     
     with col2:
-        total_livros = df_paises['Quantidade_Livros'].sum()
-        media_livros = df_paises['Quantidade_Livros'].mean()
+        # Identificar o continente com mais livros
+        continente_mais_livros = df_continentes.loc[df_continentes['total_livros'].idxmax(), 'Continente']
+        total_livros_continente = df_continentes['total_livros'].max()
         st.metric(
-            label="Total de Livros",
-            value=f"{total_livros:,.0f}",
-            delta=f"Média: {media_livros:,.1f} por país"
+            label="Continente com Mais Livros",
+            value=continente_mais_livros,
+            delta=f"{total_livros_continente:,.0f} livros"
         )
     
     with col3:
@@ -263,9 +271,16 @@ def obter_codigo_iso(pais):
         'ESPANHA': 'ESP',
         'REPUBLICA DOMINICANA': 'DOM',
         'REPUBLICA DOMINICANA DA': 'DOM',
-        # Adicione mais mapeamentos conforme necessário
+        'UCRANIA': 'UKR',
+        'ALEMANHA': 'DEU',
+        'SUICA': 'CHE',
+        'IRLANDA': 'IRL',
+        'PORTUGAL': 'PRT',
+        'CHINA': 'CHN',
+        'CHEQUIA': 'CZE',
+        'NORUEGA': 'NOR',
+        'GRECIA': 'GRC'
     }
-    
     # Verificar mapeamentos especiais primeiro
     if pais_normalizado in mapeamentos_especiais:
         return mapeamentos_especiais[pais_normalizado]
@@ -324,55 +339,276 @@ def obter_codigo_iso(pais):
     # Se não encontrar, imprimir aviso
     print(f"Código ISO não encontrado para: {pais}")
     return None
-def add_flag_emoji(df, iso_column='Codigo_ISO'):
-    """
-    Adds a column with flag emojis to a DataFrame based on ISO country codes.
-    
-    Parameters:
-    df (pandas.DataFrame): DataFrame containing country information
-    iso_column (str): Name of the column containing ISO country codes
-    
-    Returns:
-    pandas.DataFrame: DataFrame with new 'flag' column
-    """
-    def get_flag_emoji(iso_code):
-        if pd.isna(iso_code):
-            return ''
-            
-        # Convert ISO code to uppercase regional indicator symbols
-        # Regional indicator symbols are 127397 code points after uppercase letters
-        iso_code = iso_code.upper()
-        return ''.join(chr(ord(c) + 127397) for c in iso_code)
-    
-    # Create a copy to avoid modifying the original DataFrame
-    result = df.copy()
-    
-    # Add the flag column
-    result['flag'] = result[iso_column].apply(get_flag_emoji)
-    
-    return result
+def get_flag_emoji_from_iso3(iso3_code):
+    country_codes ={
+            "AFG": "AF",
+            "ALB": "AL",
+            "DZA": "DZ",
+            "ASM": "AS",
+            "AND": "AD",
+            "AGO": "AO",
+            "AIA": "AI",
+            "ATA": "AQ",
+            "ATG": "AG",
+            "ARG": "AR",
+            "ARM": "AM",
+            "ABW": "AW",
+            "AUS": "AU",
+            "AUT": "AT",
+            "AZE": "AZ",
+            "BHS": "BS",
+            "BHR": "BH",
+            "BGD": "BD",
+            "BRB": "BB",
+            "BLR": "BY",
+            "BEL": "BE",
+            "BLZ": "BZ",
+            "BEN": "BJ",
+            "BMU": "BM",
+            "BTN": "BT",
+            "BOL": "BO",
+            "BIH": "BA",
+            "BWA": "BW",
+            "BVT": "BV",
+            "BRA": "BR",
+            "BRN": "BN",
+            "BGR": "BG",
+            "BFA": "BF",
+            "BDI": "BI",
+            "KHM": "KH",
+            "CMR": "CM",
+            "CAN": "CA",
+            "CPV": "CV",
+            "CYM": "KY",
+            "CAF": "CF",
+            "TCD": "TD",
+            "CHL": "CL",
+            "CHN": "CN",
+            "CXR": "CX",
+            "CCK": "CC",
+            "COL": "CO",
+            "COM": "KM",
+            "COG": "CG",
+            "COD": "CD",
+            "COK": "CK",
+            "CRI": "CR",
+            "CIV": "CI",
+            "HRV": "HR",
+            "CUB": "CU",
+            "CYP": "CY",
+            "CZE": "CZ",
+            "DNK": "DK",
+            "DJI": "DJ",
+            "DMA": "DM",
+            "DOM": "DO",
+            "ECU": "EC",
+            "EGY": "EG",
+            "SLV": "SV",
+            "GNQ": "GQ",
+            "ERI": "ER",
+            "EST": "EE",
+            "ETH": "ET",
+            "FLK": "FK",
+            "FRO": "FO",
+            "FJI": "FJ",
+            "FIN": "FI",
+            "FRA": "FR",
+            "GUF": "GF",
+            "PYF": "PF",
+            "GAB": "GA",
+            "GMB": "GM",
+            "GEO": "GE",
+            "DEU": "DE",
+            "GHA": "GH",
+            "GIB": "GI",
+            "GRC": "GR",
+            "GRL": "GL",
+            "GRD": "GD",
+            "GLP": "GP",
+            "GUM": "GU",
+            "GTM": "GT",
+            "GIN": "GN",
+            "GNB": "GW",
+            "GUY": "GY",
+            "HTI": "HT",
+            "HMD": "HM",
+            "HND": "HN",
+            "HKG": "HK",
+            "HUN": "HU",
+            "ISL": "IS",
+            "IND": "IN",
+            "IDN": "ID",
+            "IRN": "IR",
+            "IRQ": "IQ",
+            "IRL": "IE",
+            "ISR": "IL",
+            "ITA": "IT",
+            "JAM": "JM",
+            "JPN": "JP",
+            "JOR": "JO",
+            "KAZ": "KZ",
+            "KEN": "KE",
+            "KIR": "KI",
+            "PRK": "KP",
+            "KOR": "KR",
+            "KWT": "KW",
+            "KGZ": "KG",
+            "LAO": "LA",
+            "LVA": "LV",
+            "LBN": "LB",
+            "LSO": "LS",
+            "LBR": "LR",
+            "LBY": "LY",
+            "LIE": "LI",
+            "LTU": "LT",
+            "LUX": "LU",
+            "MAC": "MO",
+            "MKD": "MK",
+            "MDG": "MG",
+            "MWI": "MW",
+            "MYS": "MY",
+            "MDV": "MV",
+            "MLI": "ML",
+            "MLT": "MT",
+            "MHL": "MH",
+            "MTQ": "MQ",
+            "MRT": "MR",
+            "MUS": "MU",
+            "MYT": "YT",
+            "MEX": "MX",
+            "FSM": "FM",
+            "MDA": "MD",
+            "MCO": "MC",
+            "MNG": "MN",
+            "MSR": "MS",
+            "MAR": "MA",
+            "MOZ": "MZ",
+            "MMR": "MM",
+            "NAM": "NA",
+            "NRU": "NR",
+            "NPL": "NP",
+            "NLD": "NL",
+            "NCL": "NC",
+            "NZL": "NZ",
+            "NIC": "NI",
+            "NER": "NE",
+            "NGA": "NG",
+            "NIU": "NU",
+            "NFK": "NF",
+            "MNP": "MP",
+            "NOR": "NO",
+            "OMN": "OM",
+            "PAK": "PK",
+            "PLW": "PW",
+            "PSE": "PS",
+            "PAN": "PA",
+            "PNG": "PG",
+            "PRY": "PY",
+            "PER": "PE",
+            "PHL": "PH",
+            "PCN": "PN",
+            "POL": "PL",
+            "PRT": "PT",
+            "PRI": "PR",
+            "QAT": "QA",
+            "REU": "RE",
+            "ROU": "RO",
+            "RUS": "RU",
+            "RWA": "RW",
+            "SHN": "SH",
+            "KNA": "KN",
+            "LCA": "LC",
+            "SPM": "PM",
+            "VCT": "VC",
+            "WSM": "WS",
+            "SMR": "SM",
+            "STP": "ST",
+            "SAU": "SA",
+            "SEN": "SN",
+            "SYC": "SC",
+            "SLE": "SL",
+            "SGP": "SG",
+            "SVK": "SK",
+            "SVN": "SI",
+            "SLB": "SB",
+            "SOM": "SO",
+            "ZAF": "ZA",
+            "SGS": "GS",
+            "ESP": "ES",
+            "LKA": "LK",
+            "SDN": "SD",
+            "SUR": "SR",
+            "SJM": "SJ",
+            "SWZ": "SZ",
+            "SWE": "SE",
+            "CHE": "CH",
+            "SYR": "SY",
+            "TWN": "TW",
+            "TJK": "TJ",
+            "TZA": "TZ",
+            "THA": "TH",
+            "TLS": "TL",
+            "TGO": "TG",
+            "TKL": "TK",
+            "TON": "TO",
+            "TTO": "TT",
+            "TUN": "TN",
+            "TUR": "TR",
+            "TKM": "TM",
+            "TCA": "TC",
+            "TUV": "TV",
+            "UGA": "UG",
+            "UKR": "UA",
+            "ARE": "AE",
+            "GBR": "GB",
+            "USA": "US",
+            "UMI": "UM",
+            "URY": "UY",
+            "UZB": "UZ",
+            "VUT": "VU",
+            "VAT": "VA",
+            "VEN": "VE",
+            "VNM": "VN",
+            "VGB": "VG",
+            "VIR": "VI",
+            "WLF": "WF",
+            "ESH": "EH",
+            "YEM": "YE",
+            "ZMB": "ZM",
+            "ZWE": "ZW"
+            } # The JSON mapping above
+    iso2_code = country_codes.get(iso3_code.upper())
+    if iso2_code:
+        return get_flag_emoji(iso2_code)
+    return ''
 
-def mapear_cor(quantidade):
-    if quantidade == 0:
-        return "rgb(255, 255, 255)"  # Branco (sem livros)
-    elif quantidade <= 5:
-        return "rgb(255, 255, 204)"  # Amarelo claro
-    elif quantidade <= 10:
-        return "rgb(255, 255, 102)"  # Amarelo mais forte
-    elif quantidade <= 15:
-        return "rgb(255, 204, 0)"    # Amarelo-ouro
-    elif quantidade <= 20:
-        return "rgb(255, 153, 0)"    # Laranja
-    elif quantidade <= 25:
-        return "rgb(255, 102, 0)"    # Laranja forte
-    elif quantidade <= 30:
-        return "rgb(255, 51, 0)"     # Laranja-avermelhado
-    elif quantidade <= 35:
-        return "rgb(255, 0, 0)"      # Vermelho
-    elif quantidade <= 40:
-        return "rgb(204, 0, 0)"      # Vermelho escuro
-    else:
-        return "rgb(139, 0, 0)"      # Vermelho sangue
+def get_flag_emoji(country_code):
+    """
+    Convert a two-letter country code to a flag emoji.
+    
+    Args:
+        country_code (str): Two-letter country code (ISO 3166-1 alpha-2)
+        
+    Returns:
+        str: Flag emoji for the country code, or empty string if input is invalid
+    """
+    country_code = country_code.upper()
+    return ''.join(chr(ord(c) + 127397) for c in country_code)
+
+def add_flag_emoji_column(df, country_code_column):
+    """
+    Add a new column with flag emojis based on country codes.
+    
+    Args:
+        df (pd.DataFrame): Input DataFrame
+        country_code_column (str): Name of the column containing country codes
+        
+    Returns:
+        pd.DataFrame: DataFrame with new 'flag' column
+    """
+    result = df.copy()
+    result['flag'] = result[country_code_column].apply(get_flag_emoji_from_iso3)
+    return result
 
 
 
@@ -397,8 +633,8 @@ def criar_mapa_livros_mundial(df_paises):
         return (log_values - log_values.min()) / (log_values.max() - log_values.min())
     
     # Adiciona emojis de bandeira
-    df_paises = add_flag_emoji(df_paises)
-    
+    df_paises = add_flag_emoji_column(df_paises, 'Codigo_ISO')
+    print(df_paises)
     # Normaliza a quantidade de livros usando log scale
     df_paises['normalized_books'] = normalize_with_log(df_paises['Quantidade_Livros'])
     
@@ -417,7 +653,7 @@ def criar_mapa_livros_mundial(df_paises):
             'flag': False,
             'Codigo_ISO': False
         },
-        color_continuous_scale='Sunset',  # Usa uma escala de azuis mais suave
+        color_continuous_scale='YlOrRd',  # Usa uma escala de azuis mais suave
         labels={'normalized_books': 'Quantidade de Livros', 'Maior_Nota': 'Maior Nota', 'Livro_Maior_Nota': 'Livro com a maior nota','Quantidade_Livros': 'Quantidade de livros'}  # Renomeia a legenda
     )
     
