@@ -279,7 +279,8 @@ def obter_codigo_iso(pais):
         'CHINA': 'CHN',
         'CHEQUIA': 'CZE',
         'NORUEGA': 'NOR',
-        'GRECIA': 'GRC'
+        'GRECIA': 'GRC',
+        'VENEZUELA': 'VEN'
     }
     # Verificar mapeamentos especiais primeiro
     if pais_normalizado in mapeamentos_especiais:
