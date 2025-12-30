@@ -25,7 +25,7 @@ if uploaded_file is not None:
     st.dataframe(df)
 elif use_local_file:
     try:
-        local_file_path = "Book1 (3).xlsm"
+        local_file_path = "Book1.xlsm"
         df = pd.read_excel(local_file_path)
         st.session_state['df_livros'] = df
         st.success("Arquivo local carregado com sucesso!")
